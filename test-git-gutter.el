@@ -31,9 +31,11 @@
 
 (ert-deftest git-gutter:root-directory ()
   "helper function `git-gutter:root-directory'"
-  (let ((expected (expand-file-name default-directory))
-        (got (git-gutter:root-directory)))
-    (should (string= expected got))))
+  (let ((expected-dir (expand-file-name default-directory))
+        (expected-vcs 'git)
+        (repo-info (git-gutter:root-directory)))
+    (should (string= expected-dir (first repo-info)))
+    (should (eq expected-vcs (second repo-info)))))
 
 (ert-deftest git-gutter:sign-width ()
   "helper function `git-gutter:sign-width'"
@@ -80,9 +82,9 @@
           do
           (should (eql (plist-get diffinfo2 prop) expected)))))
 
-(ert-deftest git-gutter:in-git-repository-p ()
-  "Should return 128 if default-directory does not exist"
+(ert-deftest git-gutter:in-repository-p ()
+  "Should return nil if default-directory does not exist"
   (let ((default-directory "/non/exist/directory"))
-    (should (eql 128 (git-gutter:in-git-repository-p)))))
+    (should (null (git-gutter:in-repository-p)))))
 
 ;;; test-git-gutter.el end here

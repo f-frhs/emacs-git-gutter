@@ -78,20 +78,21 @@ character for signs of changes"
 (defvar git-gutter:overlays nil)
 (make-variable-buffer-local 'git-gutter:overlays)
 
-(defun git-gutter:in-git-repository-p ()
-  (if (and default-directory (file-directory-p default-directory))
-      (call-process-shell-command "git rev-parse --is-inside-work-tree")
-    128))
+(defun git-gutter:in-repository-p ()
+  (when (and default-directory (file-directory-p default-directory))
+    (loop for dir in '(".git" ".hg")
+          when (locate-dominating-file default-directory dir)
+          return it)))
+
+(defun git-gutter:dir-to-vcs (dir)
+  (cond ((string= dir ".git") 'git)
+        ((string= dir ".hg") 'mercurial)
+        (t (error "Not support %s!!"))))
 
 (defun git-gutter:root-directory ()
-  (with-temp-buffer
-    (let* ((cmd "git rev-parse --show-toplevel")
-           (ret (call-process-shell-command cmd nil t)))
-      (unless (zerop ret)
-        (error "Here is not git repository!!"))
-      (goto-char (point-min))
-      (file-name-as-directory
-       (buffer-substring-no-properties (point) (line-end-position))))))
+  (loop for dir in '(".git" ".hg")
+        when (locate-dominating-file default-directory dir)
+        return (list (expand-file-name it) (git-gutter:dir-to-vcs dir))))
 
 (defun git-gutter:changes-to-number (str)
   (if (string= str "")
@@ -101,8 +102,13 @@ character for signs of changes"
 (defun git-gutter:make-diffinfo (type start &optional end)
   (list :type type :start-line start :end-line end))
 
-(defun git-gutter:diff (curfile)
-  (let ((cmd (format "git diff -U0 %s %s" git-gutter:diff-option curfile))
+(defun git-gutter:diff-command (file vcs)
+  (case vcs
+    (git (format "git diff -U0 %s %s" git-gutter:diff-option curfile))
+    (mercurial (format "hg diff -U0 %s %s" git-gutter:diff-option curfile))))
+
+(defun git-gutter:diff (curfile vcs)
+  (let ((cmd (git-gutter:diff-command curfile vcs))
         (regexp "^@@ -\\([0-9]+\\),?\\([0-9]*\\) \\+\\([0-9]+\\),?\\([0-9]*\\) @@"))
     (with-temp-buffer
       (let ((ret (call-process-shell-command cmd nil t)))
@@ -202,8 +208,8 @@ character for signs of changes"
 (defvar git-gutter:clear-function #'git-gutter:clear-overlays
   "Function of clear changes")
 
-(defun git-gutter:process-diff (curfile)
-  (let ((diffinfos (git-gutter:diff curfile)))
+(defun git-gutter:process-diff (curfile vcs)
+  (let ((diffinfos (git-gutter:diff curfile vcs)))
     (funcall git-gutter:view-diff-function diffinfos)))
 
 (defun git-gutter:clear-overlays ()
@@ -217,10 +223,12 @@ character for signs of changes"
   (interactive)
   (git-gutter:delete-overlay)
   (when (buffer-file-name)
-    (let* ((gitroot (git-gutter:root-directory)))
-      (let ((default-directory gitroot)
-            (current-file (file-relative-name (buffer-file-name) gitroot)))
-        (git-gutter:process-diff current-file)
+    (let* ((root-info (git-gutter:root-directory))
+           (rootdir (first root-info))
+           (vcs (second root-info)))
+      (let ((default-directory rootdir)
+            (current-file (file-relative-name (buffer-file-name) rootdir)))
+        (git-gutter:process-diff current-file vcs)
         (setq git-gutter:enabled t)))))
 
 ;;;###autoload
@@ -246,7 +254,7 @@ character for signs of changes"
   :global     nil
   :lighter    git-gutter:lighter
   (if git-gutter-mode
-      (if (zerop (git-gutter:in-git-repository-p))
+      (if (git-gutter:in-repository-p)
           (progn
             (add-hook 'after-save-hook 'git-gutter nil t)
             (add-hook 'after-revert-hook 'git-gutter nil t)
@@ -262,7 +270,7 @@ character for signs of changes"
   git-gutter-mode
   (lambda ()
     (unless (minibufferp)
-      (when (zerop (git-gutter:in-git-repository-p))
+      (when (git-gutter:in-repository-p)
         (git-gutter-mode 1))))
   :group 'git-gutter)
 
